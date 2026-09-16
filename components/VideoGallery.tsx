@@ -23,7 +23,7 @@ export default function VideoGallery({ videos }: { videos: ApologyVideo[] }) {
   return (
     <div className="video-grid">
       {videos.map((video, index) => (
-        <article className="video-card" key={video.url}>
+        <article className="video-card" key={video.id}>
           <div className="video-frame">
             <video controls preload="metadata" playsInline>
               <source src={video.url} />

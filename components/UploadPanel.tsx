@@ -1,14 +1,11 @@
 "use client";
 
-import { upload } from "@vercel/blob/client";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Status = "idle" | "checking" | "uploading" | "success" | "error";
 
-function slug(value: string) {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 50);
-}
+const videoApi = process.env.NEXT_PUBLIC_VIDEO_API_URL || "https://videos.2-24-124-55.sslip.io";
 
 function fileDuration(file: File) {
   return new Promise<number>((resolve, reject) => {
@@ -25,6 +22,38 @@ function fileDuration(file: File) {
     };
     video.src = url;
   });
+}
+
+function uploadFile(file: File, loser: string, week: string, onProgress: (percentage: number) => void) {
+  return new Promise<{ id: string }>((resolve, reject) => {
+    const params = new URLSearchParams({ loser, week, filename: file.name });
+    const request = new XMLHttpRequest();
+    request.open("POST", `${videoApi}/api/upload?${params}`);
+    request.setRequestHeader("Content-Type", file.type || "video/mp4");
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100));
+    };
+    request.onerror = () => reject(new Error("The upload lost connection. Check your signal and try again."));
+    request.onload = () => {
+      let result: { id?: string; error?: string } = {};
+      try { result = JSON.parse(request.responseText); } catch {}
+      if (request.status >= 200 && request.status < 300 && result.id) resolve({ id: result.id });
+      else reject(new Error(result.error || "The server fumbled the upload. Try again."));
+    };
+    request.send(file);
+  });
+}
+
+async function waitForProcessing(id: string) {
+  for (let attempt = 0; attempt < 300; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    const response = await fetch(`${videoApi}/api/status/${id}`, { cache: "no-store" });
+    if (!response.ok) continue;
+    const result = (await response.json()) as { status: string; error?: string };
+    if (result.status === "ready") return;
+    if (result.status === "error") throw new Error(result.error || "Video processing failed.");
+  }
+  throw new Error("The video is still processing. Refresh the page in a few minutes.");
 }
 
 export default function UploadPanel({ variant }: { variant: "hero" | "footer" }) {
@@ -62,16 +91,9 @@ export default function UploadPanel({ variant }: { variant: "hero" | "footer" })
 
       setStatus("uploading");
       setMessage("Submitting evidence…");
-      const extension = file.name.split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "mp4";
-      const pathname = `apologies/${Date.now()}__${slug(week)}__${slug(loser)}__${crypto.randomUUID()}.${extension}`;
-
-      await upload(pathname, file, {
-        access: "public",
-        handleUploadUrl: "/api/upload",
-        multipart: true,
-        contentType: file.type || undefined,
-        onUploadProgress: ({ percentage }) => setProgress(Math.round(percentage)),
-      });
+      const result = await uploadFile(file, loser.trim(), week.trim(), setProgress);
+      setMessage("Making it playable on every phone…");
+      await waitForProcessing(result.id);
 
       setStatus("success");
       setMessage("Apology accepted. Dignity denied.");

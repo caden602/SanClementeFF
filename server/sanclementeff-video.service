@@ -1,0 +1,19 @@
+[Unit]
+Description=San Clemente Fantasy Football video service
+After=network.target
+
+[Service]
+Type=simple
+User=codex
+Group=codex
+EnvironmentFile=/etc/sanclementeff-video.env
+ExecStart=/usr/bin/node /opt/sanclementeff-video/index.mjs
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/srv/sanclementeff
+
+[Install]
+WantedBy=multi-user.target
